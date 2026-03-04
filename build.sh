@@ -75,12 +75,35 @@ send_telegram_error() {
     curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
         -d chat_id="${TG_CHAT_ID}" \
         -d parse_mode=Markdown \
-        -d text="❌ *Kernel CI Build Failed*"
+        -d text="❌ *Kernel CI Build Test Failed*
+
+📄 *Log attached below* "
+
+    send_telegram_log
+}
+
+send_telegram_start() {
+curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TG_CHAT_ID}" \
+        -d parse_mode=Markdown \
+        -d text="🚀 *Kernel CI Build Test Started* "
+}
+
+send_telegram_log() {
+    LOG_FILE="$ROOTDIR/logs/build.txt"
+
+    [ ! -f "$LOG_FILE" ] && return
+
+    curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" \
+        -F chat_id="${TG_CHAT_ID}" \
+        -F document=@"${LOG_FILE}" 
 }
 
 build_kernel() {
 
     echo -e "$yellow[+] Building kernel...$white"
+    send_telegram_start
+    get_toolchain_info
 
     rm -rf out
     make O=out ARCH=arm64 rahmatmsm8937_defconfig || {
@@ -89,13 +112,7 @@ build_kernel() {
         exit 1
     }
 
-    get_toolchain_info
     BUILD_START=$(TZ=Asia/Jakarta date +%s)
-
-    curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d parse_mode=Markdown \
-        -d text="🚀 *Kernel CI Build Started...*"
 
     make -j$(nproc) O=out ARCH=arm64 \
         CROSS_COMPILE=$TC64 \
