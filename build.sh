@@ -1,4 +1,5 @@
 #!/bin/bash
+#kontol
 # ================= COLOR =================
 red='\033[0;31m'
 green='\033[0;32m'
@@ -163,3 +164,4 @@ upload_telegram
 
 END=$(TZ=Asia/Jakarta date +%s)
 echo -e "$green[✓] Done in $((END - START)) seconds$white"
+
