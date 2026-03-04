@@ -1,8 +1,4 @@
 #!/bin/bash
-# ReLIFE Kernel Build Script - Telegram Ultra Detail
-# KernelSU Next | GCC + Clang | Host Info | Error inline + file
-
-set -Eeuo pipefail
 
 # ================= COLOR =================
 red='\033[0;31m'
@@ -97,7 +93,6 @@ ERRORS_COUNT=0
 # Host info
 HOST_NAME=$(uname -n 2>/dev/null || echo "unknown")
 HOST_OS=$(uname -sr 2>/dev/null || echo "unknown")
-HOST_ARCH=$(uname -m 2>/dev/null || echo "unknown")
 HOST_CPU=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || echo "unknown")
 HOST_CORES=$(nproc --all 2>/dev/null || echo "?")
 RAM_TOTAL=$(awk '/MemTotal/{printf "%.1f", $2/1024/1024}' /proc/meminfo 2>/dev/null || echo "?")
@@ -120,9 +115,14 @@ log_e()   { echo -e "${red}[$(_ts)] [ERR]${white} $*"; }
 log_tg()  { echo -e "${cyan}[$(_ts)] [TG]${white} $*"; }
 log_sec() { echo -e "\n${yellow}=== $* ===${white}\n"; }
 
-# ================= TELEGRAM FUNCTIONS =================
+# ================= TELEGRAM =================
+# Metode sama persis dengan kode referensi:
+# sendMessage  -> -d text="..."
+# sendDocument -> -F caption="..."
+# editMessage  -> -d text="..."
 
 tg_send() {
+    # Kirim pesan baru, return message_id
     local text="$1"
     local resp
     resp=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
@@ -137,6 +137,7 @@ print(d['result']['message_id'] if d.get('ok') else '')" 2>/dev/null || echo ""
 }
 
 tg_edit() {
+    # Edit pesan yang sudah ada (pakai TG_MSG_ID)
     [ -z "${TG_MSG_ID:-}" ] && return 0
     local text="$1"
     curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/editMessageText" \
@@ -148,12 +149,10 @@ tg_edit() {
 }
 
 tg_upload() {
+    # Upload file, caption pakai -F seperti referensi
     local file="$1"
     local caption="${2:-}"
-    if [ ! -f "$file" ]; then
-        log_w "Upload skip: $file tidak ada"
-        return 1
-    fi
+    [ ! -f "$file" ] && { log_w "Upload skip: $file tidak ada"; return 1; }
     local fsize
     fsize=$(du -sh "$file" | awk '{print $1}')
     log_tg "Upload: $(basename "$file") ($fsize)"
@@ -216,10 +215,10 @@ get_compiler_info() {
 get_kernel_version() {
     if [ -f "Makefile" ]; then
         local v p s e
-        v=$(awk '/^VERSION[[:space:]]*=/{print $3; exit}' Makefile 2>/dev/null || echo "0")
-        p=$(awk '/^PATCHLEVEL[[:space:]]*=/{print $3; exit}' Makefile 2>/dev/null || echo "0")
-        s=$(awk '/^SUBLEVEL[[:space:]]*=/{print $3; exit}' Makefile 2>/dev/null || echo "0")
-        e=$(awk '/^EXTRAVERSION[[:space:]]*=/{print $3; exit}' Makefile 2>/dev/null || echo "")
+        v=$(grep -E '^VERSION =' Makefile | awk '{print $3}')
+        p=$(grep -E '^PATCHLEVEL =' Makefile | awk '{print $3}')
+        s=$(grep -E '^SUBLEVEL =' Makefile | awk '{print $3}')
+        e=$(grep -E '^EXTRAVERSION =' Makefile | awk '{print $3}' || echo "")
         KERNEL_VERSION="${v}.${p}.${s}${e}"
         if [ -f "out/.config" ]; then
             KERNEL_LOCALVERSION=$(grep '^CONFIG_LOCALVERSION=' out/.config 2>/dev/null | cut -d'"' -f2 || echo "")
@@ -264,8 +263,8 @@ get_kernelsu_info() {
 
         if [ -f "$ksu_root/kernel/Makefile" ]; then
             local v
-            v=$(grep -E '^VERSION[[:space:]]*[:?]?=' "$ksu_root/kernel/Makefile" 2>/dev/null | \
-                awk -F'=' '{print $NF}' | xargs | head -1 || echo "")
+            v=$(grep -E '^VERSION' "$ksu_root/kernel/Makefile" 2>/dev/null | \
+                head -1 | awk -F'=' '{print $NF}' | xargs || echo "")
             [ -n "$v" ] && KSU_VERSION="$v"
         fi
 
@@ -301,7 +300,7 @@ get_kernelsu_info() {
     fi
 
     if [ "$KSU_ENABLED" = "true" ]; then
-        log_ok "KernelSU Next: DITEMUKAN | Versi: $KSU_VERSION | Tag: $KSU_GIT_TAG"
+        log_ok "KernelSU Next: v$KSU_VERSION | Tag: $KSU_GIT_TAG"
     else
         log_w "KernelSU Next: tidak ditemukan"
     fi
@@ -321,14 +320,14 @@ notify_start() {
 
     local ksu_status
     if [ "$KSU_ENABLED" = "true" ]; then
-        ksu_status="✅ Aktif — v${KSU_VERSION} (${KSU_GIT_TAG})"
+        ksu_status="✅ Aktif - v${KSU_VERSION} (${KSU_GIT_TAG})"
     else
         ksu_status="❌ Tidak ada"
     fi
 
-    TG_MSG_ID=$(tg_send "🚀 *ReLIFE Kernel — Build Dimulai*
+    TG_MSG_ID=$(tg_send "🚀 *ReLIFE Kernel - Build Dimulai*
 
-📱 *Device*         : \`${DEVICE}\` — ${DEVICE_FULL}
+📱 *Device*         : \`${DEVICE}\` - ${DEVICE_FULL}
 📦 *Kernel*         : ${KERNEL_NAME}
 🍃 *Versi Kernel*   : \`${KERNEL_VERSION}\`
 🏷 *Localversion*   : \`${KERNEL_LOCALVERSION:-tidak ada}\`
@@ -374,9 +373,9 @@ notify_start() {
 
 notify_compiling() {
     log_tg "Edit pesan ke COMPILING..."
-    tg_edit "🔨 *ReLIFE Kernel — Sedang Dikompilasi...*
+    tg_edit "🔨 *ReLIFE Kernel - Sedang Dikompilasi...*
 
-📱 *Device*     : \`${DEVICE}\` — ${DEVICE_FULL}
+📱 *Device*     : \`${DEVICE}\` - ${DEVICE_FULL}
 🍃 *Versi*      : \`${KERNEL_VERSION}\`
 🌿 *Branch*     : \`${BRANCH}\`
 🔖 *Commit*     : \`${COMMIT_HASH}\`
@@ -398,7 +397,7 @@ notify_compiling() {
 
 notify_packing() {
     log_tg "Edit pesan ke PACKING..."
-    tg_edit "📦 *ReLIFE Kernel — Membuat Zip...*
+    tg_edit "📦 *ReLIFE Kernel - Membuat Zip...*
 
 📱 *Device*          : \`${DEVICE}\`
 🍃 *Versi*           : \`${KERNEL_VERSION}\`
@@ -412,7 +411,7 @@ notify_packing() {
 
 notify_uploading() {
     log_tg "Edit pesan ke UPLOADING..."
-    tg_edit "📤 *ReLIFE Kernel — Mengupload ke Telegram...*
+    tg_edit "📤 *ReLIFE Kernel - Mengupload ke Telegram...*
 
 📱 *Device*          : \`${DEVICE}\`
 📁 *File*            : \`${ZIP_NAME}\`
@@ -428,7 +427,7 @@ notify_success() {
 
     local ksu_cap
     if [ "$KSU_ENABLED" = "true" ]; then
-        ksu_cap="✅ Aktif — v${KSU_VERSION} (${KSU_GIT_TAG})
+        ksu_cap="✅ Aktif - v${KSU_VERSION} (${KSU_GIT_TAG})
    Commit KSU   : \`${KSU_GIT_COMMIT}\`
    Min Manager  : \`${KSU_MANAGER_VER}\`
    Config       : ${KSU_CONFIG_STATUS}"
@@ -439,36 +438,41 @@ notify_success() {
     local warn_note=""
     [ "$WARNINGS" -gt 0 ] && warn_note="⚠️ *Warnings*        : ${WARNINGS} (warning log terlampir)"
 
-    local caption
-    caption="✅ *ReLIFE Kernel — Build Berhasil!*
+    # Upload kernel zip - sama persis dengan referensi
+    log_tg "Upload kernel zip..."
+    curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" \
+        -F chat_id="${TG_CHAT_ID}" \
+        -F document=@"${zip_path}" \
+        -F parse_mode=Markdown \
+        -F caption="✅ *ReLIFE Kernel - Build Berhasil!*
 
-📱 *Device*          : \`${DEVICE}\` — ${DEVICE_FULL}
+📱 *Device*          : ${DEVICE} - ${DEVICE_FULL}
 📦 *Kernel*          : ${KERNEL_NAME}
-🍃 *Versi Kernel*    : \`${KERNEL_VERSION}\`
-🏷 *Localversion*    : \`${KERNEL_LOCALVERSION:-tidak ada}\`
+🍃 *Versi Kernel*    : ${KERNEL_VERSION}
+🏷 *Localversion*    : ${KERNEL_LOCALVERSION:-tidak ada}
 
 🔑 *KernelSU Next*   : ${ksu_cap}
 
 📂 *Source*
-🌿 *Branch*          : \`${BRANCH}\`
-🔖 *Commit*          : \`${COMMIT_HASH}\`
+🌿 *Branch*          : ${BRANCH}
+🔖 *Commit*          : ${COMMIT_HASH}
 💬 *Pesan Commit*    : ${COMMIT_MSG}
 👤 *Author*          : ${COMMIT_AUTHOR}
 📅 *Tgl Commit*      : ${COMMIT_DATE}
 
 🛠 *Compiler*
-🔧 *GCC 64-bit*      : \`${GCC_VER_FULL}\`
-🔧 *GCC 32-bit*      : \`${GCC32_VER_FULL}\`
-🔵 *Clang*           : \`${CLANG_VER_FULL}\`
-🔗 *Linker*          : \`${LD_VER_FULL}\`
-⚙️ *Defconfig*       : \`${DEFCONFIG}\`
-🖼 *Image*           : \`${IMG_USED}\` (${IMG_SIZE})
+🔧 *GCC 64-bit*      : ${GCC_VER_FULL}
+🔧 *GCC 32-bit*      : ${GCC32_VER_FULL}
+🔵 *Clang*           : ${CLANG_VER_FULL}
+🔗 *Linker*          : ${LD_VER_FULL}
+⚙️ *Defconfig*       : ${DEFCONFIG}
+🖼 *Image*           : ${IMG_USED} (${IMG_SIZE})
 🔨 *Jobs*            : ${JOBS} thread
 ⏱ *Waktu Compile*   : ${BUILD_TIME}
 🕒 *Tanggal Build*   : ${BUILD_DATETIME}
 ${warn_note}
 
-📁 *File*            : \`${ZIP_NAME}\`
+📁 *File*            : ${ZIP_NAME}
 📏 *Ukuran Zip*      : ${ZIP_SIZE}
 🔐 *MD5*             :
 \`${MD5_HASH}\`
@@ -476,41 +480,33 @@ ${warn_note}
 \`${SHA1_HASH}\`
 
 ⚡ *Flash via TWRP / Custom Recovery*"
-
-    # 1. Upload kernel zip
-    log_tg "Upload kernel zip..."
-    curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" \
-        -F chat_id="${TG_CHAT_ID}" \
-        -F document=@"${zip_path}" \
-        -F parse_mode=Markdown \
-        -F caption="${caption}" > /dev/null
     log_ok "Kernel zip terkirim"
 
-    # 2. Upload full build log
+    # Upload full build log
     tg_upload "$LOG_FILE" \
-"📋 *Full Build Log — Berhasil*
-${KERNEL_NAME} \`${KERNEL_VERSION}\` | \`${BRANCH}\` | \`${COMMIT_HASH}\`
+"📋 *Full Build Log - Berhasil*
+${KERNEL_NAME} ${KERNEL_VERSION} | ${BRANCH} | ${COMMIT_HASH}
 Compiler: ${COMPILER_STRING}
 KernelSU: $([ "$KSU_ENABLED" = "true" ] && echo "✅ v${KSU_VERSION}" || echo "❌")
 Warnings: ${WARNINGS} | Waktu: ${BUILD_TIME}"
 
-    # 3. Upload warning log jika ada
+    # Upload warning log jika ada
     if [ "$WARNINGS" -gt 0 ] && [ -f "$WARN_LOG" ] && [ -s "$WARN_LOG" ]; then
         tg_upload "$WARN_LOG" \
-"⚠️ *Warning Summary* — ${WARNINGS} warnings
-${KERNEL_NAME} \`${KERNEL_VERSION}\` | \`${COMMIT_HASH}\`"
+"⚠️ *Warning Summary* - ${WARNINGS} warnings
+${KERNEL_NAME} ${KERNEL_VERSION} | ${COMMIT_HASH}"
     fi
 
-    # 4. Edit pesan awal ke summary final
-    tg_edit "✅ *Build Selesai — ${KERNEL_NAME} \`${KERNEL_VERSION}\`*
+    # Edit pesan awal ke summary final
+    tg_edit "✅ *Build Selesai - ${KERNEL_NAME} ${KERNEL_VERSION}*
 
-📦 \`${ZIP_NAME}\`
-🖼 Image         : \`${IMG_USED}\` (${IMG_SIZE})
+📦 ${ZIP_NAME}
+🖼 Image         : ${IMG_USED} (${IMG_SIZE})
 📏 Ukuran Zip    : ${ZIP_SIZE}
 ⏱ Waktu Compile : ${BUILD_TIME}
 ⚠️ Warnings      : ${WARNINGS}
 🔑 KernelSU Next : $([ "$KSU_ENABLED" = "true" ] && echo "✅ v${KSU_VERSION} | ${KSU_GIT_TAG}" || echo "❌")
-🔐 MD5           : \`${MD5_HASH}\`
+🔐 MD5           : ${MD5_HASH}
 🕒 Selesai       : $(TZ=Asia/Jakarta date +"%d %B %Y, %H:%M WIB")"
 }
 
@@ -518,6 +514,7 @@ notify_error() {
     local stage="${ERROR_STAGE:-unknown}"
     local line="${1:-?}"
 
+    # Kumpulkan preview error dari log
     local last_err="Tidak ada error yang tertangkap"
     if [ -f "$LOG_FILE" ]; then
         local raw
@@ -529,45 +526,45 @@ notify_error() {
         [ -n "$raw" ] && last_err="$raw"
         if [ ${#last_err} -gt 900 ]; then
             last_err="${last_err:0:900}
-..._(terpotong — lihat log)_"
+..._(terpotong - lihat log)_"
         fi
     fi
 
     # 1. Edit pesan awal ke GAGAL
     log_tg "Edit pesan ke GAGAL..."
-    tg_edit "❌ *Build GAGAL — \`${stage}\`*
+    tg_edit "❌ *Build GAGAL - ${stage}*
 
-📱 Device    : \`${DEVICE}\`
-🌿 Branch    : \`${BRANCH}\`
-🔖 Commit    : \`${COMMIT_HASH}\`
+📱 Device    : ${DEVICE}
+🌿 Branch    : ${BRANCH}
+🔖 Commit    : ${COMMIT_HASH}
 💬 Msg       : ${COMMIT_MSG}
-💥 Gagal di  : \`${stage}\`
+💥 Gagal di  : ${stage}
 📍 Baris     : ${line}
 ⚠️ Warnings  : ${WARNINGS}
 🔢 Errors    : ${ERRORS_COUNT}
 🕒 Waktu     : $(TZ=Asia/Jakarta date +"%H:%M WIB")
 
-📋 Log + preview error di bawah..."
+Log + preview error di bawah..."
 
-    # 2. Pesan baru — inline preview error
-    log_tg "Kirim inline error preview..."
-    tg_send "❌ *ReLIFE Kernel — Build GAGAL*
+    # 2. Kirim pesan baru dengan inline preview error
+    log_tg "Kirim inline preview error..."
+    tg_send "❌ *ReLIFE Kernel - Build GAGAL*
 
-📱 *Device*        : \`${DEVICE}\` — ${DEVICE_FULL}
+📱 *Device*        : ${DEVICE} - ${DEVICE_FULL}
 📦 *Kernel*        : ${KERNEL_NAME}
-🍃 *Versi*         : \`${KERNEL_VERSION}\`
-🌿 *Branch*        : \`${BRANCH}\`
-🔖 *Commit*        : \`${COMMIT_HASH}\`
+🍃 *Versi*         : ${KERNEL_VERSION}
+🌿 *Branch*        : ${BRANCH}
+🔖 *Commit*        : ${COMMIT_HASH}
 💬 *Pesan Commit*  : ${COMMIT_MSG}
 👤 *Author*        : ${COMMIT_AUTHOR}
 
-🔧 *GCC 64*        : \`${GCC_VER}\`
-🔧 *GCC 32*        : \`${GCC32_VER}\`
-🔵 *Clang*         : \`${CLANG_VER}\`
-🔗 *LD*            : \`${LD_VER}\`
-⚙️ *Defconfig*     : \`${DEFCONFIG}\`
+🔧 *GCC 64*        : ${GCC_VER}
+🔧 *GCC 32*        : ${GCC32_VER}
+🔵 *Clang*         : ${CLANG_VER}
+🔗 *LD*            : ${LD_VER}
+⚙️ *Defconfig*     : ${DEFCONFIG}
 
-💥 *Gagal di*      : \`${stage}\`
+💥 *Gagal di*      : ${stage}
 📍 *Baris Script*  : ${line}
 ⚠️ *Warnings*      : ${WARNINGS}
 🔢 *Errors*        : ${ERRORS_COUNT}
@@ -585,15 +582,15 @@ ${last_err}
             -F chat_id="${TG_CHAT_ID}" \
             -F document=@"${LOG_FILE}" \
             -F parse_mode=Markdown \
-            -F caption="❌ *Full Build Log — GAGAL*
-Stage: \`${stage}\` | Baris: ${line}
-${KERNEL_NAME} \`${KERNEL_VERSION}\` | \`${BRANCH}\` | \`${COMMIT_HASH}\`
+            -F caption="❌ *Full Build Log - GAGAL*
+Stage: ${stage} | Baris: ${line}
+${KERNEL_NAME} ${KERNEL_VERSION} | ${BRANCH} | ${COMMIT_HASH}
 GCC: ${GCC_VER} | Clang: ${CLANG_VER}
 Warnings: ${WARNINGS} | Errors: ${ERRORS_COUNT}" > /dev/null
         log_ok "Full log terkirim"
     fi
 
-    # 4. Upload filtered error log
+    # 4. Buat + upload filtered error log
     grep -aE "(error:|Error|FAILED|undefined reference|multiple definition|fatal:)" \
         "$LOG_FILE" 2>/dev/null | \
         grep -v "^Binary\|Werror\|^--" | \
@@ -607,9 +604,9 @@ Warnings: ${WARNINGS} | Errors: ${ERRORS_COUNT}" > /dev/null
             -F chat_id="${TG_CHAT_ID}" \
             -F document=@"${ERR_LOG}" \
             -F parse_mode=Markdown \
-            -F caption="🔴 *Filtered Error Log* — ${err_lines} baris error
-Stage: \`${stage}\` | Baris: ${line}
-${KERNEL_NAME} | \`${COMMIT_HASH}\`" > /dev/null
+            -F caption="🔴 *Filtered Error Log* - ${err_lines} baris error
+Stage: ${stage} | Baris: ${line}
+${KERNEL_NAME} | ${COMMIT_HASH}" > /dev/null
         log_ok "Error log terkirim"
     fi
 }
@@ -626,6 +623,7 @@ on_error() {
 }
 
 trap 'on_error $LINENO' ERR
+set -Eeuo pipefail
 
 # ================= CLONE ANYKERNEL =================
 
