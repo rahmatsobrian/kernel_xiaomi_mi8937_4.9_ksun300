@@ -1,47 +1,34 @@
 #!/usr/bin/env bash
 
 # =========================================================
-# ReLIFE Kernel CI - Telegram Stable Edition
+# 🚀 ReLIFE Kernel CI - Ultimate Telegram Build Script
 # =========================================================
 
-# ================= PATH =================
 ROOTDIR=$(pwd)
 OUTDIR="$ROOTDIR/out/arch/arm64/boot"
 ANYKERNEL_DIR="$ROOTDIR/AnyKernel"
+LOGFILE="$ROOTDIR/build.log"
 
 KIMG_DTB="$OUTDIR/Image.gz-dtb"
 KIMG="$OUTDIR/Image.gz"
 
-# ================= TOOLCHAIN =================
 TC64="aarch64-linux-gnu-"
 TC32="arm-linux-gnueabi-"
 
-# ================= DEVICE =================
 KERNEL_NAME="ReLIFE"
 DEVICE="mi8937"
 DEVICE_FULL="Xiaomi Snapdragon 430/435"
 DEFCONFIG="rahmatmsm8937hos_defconfig"
 
-# ================= TELEGRAM =================
 TG_BOT_TOKEN="7443002324:AAFpDcG3_9L0Jhy4v98RCBqu2pGfznBCiDM"
 TG_CHAT_ID="-1003520316735"
 
-# ================= DATE =================
-DATE_TITLE=$(date +"%d%m%Y")
-TIME_TITLE=$(date +"%H%M%S")
-BUILD_DATETIME=$(date +"%d %B %Y %H:%M")
+DATE=$(date +"%d %B %Y %H:%M")
 
-# ================= GLOBAL =================
-BUILD_TIME="unknown"
-KERNEL_VERSION="unknown"
-KERNEL_LOCALVERSION=""
-IMG_USED="unknown"
-ZIP_NAME=""
-MD5_HASH=""
-SHA1_HASH=""
-ZIP_SIZE=""
+# =========================================================
+# MACHINE INFO
+# =========================================================
 
-# ================= MACHINE INFO =================
 HOST_NAME=$(hostname)
 HOST_OS=$(uname -sr)
 HOST_CPU=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)
@@ -51,67 +38,63 @@ RAM_FREE=$(free -h | awk '/Mem:/ {print $7}')
 DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
 DISK_FREE=$(df -h / | awk 'NR==2 {print $4}')
 
-# ================= GIT INFO =================
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null)
-COMMIT_MSG=$(git log --format="%s" -1 2>/dev/null)
-COMMIT_AUTHOR=$(git log --format="%an" -1 2>/dev/null)
-COMMIT_DATE=$(git log --format="%cd" --date=format:"%d %b %Y %H:%M" -1 2>/dev/null)
-TOTAL_COMMITS=$(git rev-list --count HEAD 2>/dev/null)
+# =========================================================
+# GIT INFO
+# =========================================================
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+COMMIT_HASH=$(git rev-parse --short HEAD)
+COMMIT_MSG=$(git log -1 --pretty=%s)
+COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+COMMIT_DATE=$(git log -1 --date=format:"%d %b %Y %H:%M" --pretty=%cd)
+TOTAL_COMMITS=$(git rev-list --count HEAD)
 DIRTY_COUNT=$(git status --porcelain | wc -l)
 
-# ================= KERNELSU =================
-KSU_ENABLED="false"
-KSU_VERSION="N/A"
-KSU_VARIANT="KernelSU-Next"
-
-# ================= SUSFS =================
-SUSFS_ENABLED="false"
-SUSFS_DIR="N/A"
-
 # =========================================================
-# TELEGRAM FUNCTIONS
+# TELEGRAM
 # =========================================================
 
-send_telegram() {
-
-MESSAGE="$1"
+send_msg() {
 
 curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
 -d chat_id="${TG_CHAT_ID}" \
---data-urlencode text="$MESSAGE" >/dev/null
+--data-urlencode text="$1" >/dev/null
 
 }
 
-upload_telegram() {
-
-ZIP_PATH="$ANYKERNEL_DIR/$ZIP_NAME"
-
-CAPTION="ReLIFE Kernel Build Success
-
-Device : ${DEVICE}
-Kernel : ${KERNEL_VERSION}
-
-Image : ${IMG_USED}
-Zip Size : ${ZIP_SIZE}
-
-Build Time : ${BUILD_TIME}
-
-MD5
-${MD5_HASH}
-
-SHA1
-${SHA1_HASH}"
+upload_file() {
 
 curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument" \
 -F chat_id="${TG_CHAT_ID}" \
--F document=@"${ZIP_PATH}" \
---form-string caption="$CAPTION" >/dev/null
+-F document=@"$1" \
+--form-string caption="$2" >/dev/null
 
 }
 
 # =========================================================
-# INFO FUNCTIONS
+# DETECT COMPILER
+# =========================================================
+
+detect_compiler() {
+
+if command -v clang >/dev/null; then
+
+COMPILER="Clang"
+COMPILER_VER=$(clang --version | head -1)
+
+else
+
+COMPILER="GCC"
+COMPILER_VER=$(${TC64}gcc --version | head -1)
+
+fi
+
+LINKER=$(${TC64}ld --version | head -1)
+
+}
+
+# =========================================================
+# KERNEL VERSION
 # =========================================================
 
 get_kernel_version() {
@@ -124,100 +107,130 @@ KERNEL_VERSION="${VERSION}.${PATCHLEVEL}.${SUBLEVEL}"
 
 }
 
+# =========================================================
+# LOCALVERSION
+# =========================================================
+
 get_localversion() {
 
-if [ -f "out/.config" ]; then
-KERNEL_LOCALVERSION=$(grep CONFIG_LOCALVERSION out/.config | cut -d'"' -f2)
+if [ -f out/.config ]; then
+
+LOCALVERSION=$(grep "^CONFIG_LOCALVERSION=" out/.config \
+| sed 's/CONFIG_LOCALVERSION="//' \
+| sed 's/"//')
+
 fi
 
 }
 
-get_toolchain_info() {
+# =========================================================
+# KERNELSU DETECTION
+# =========================================================
 
-if command -v "${TC64}gcc" >/dev/null 2>&1; then
-TC_INFO=$("${TC64}gcc" --version | head -1)
-fi
+detect_kernelsu() {
 
-if command -v "${TC64}ld" >/dev/null 2>&1; then
-LD_INFO=$("${TC64}ld" --version | head -1)
-fi
-
-}
-
-get_kernelsu_info() {
+KSU_ENABLED="❌ Tidak ada"
+KSU_VERSION="N/A"
+KSU_MANAGER="N/A"
+KSU_TAG="N/A"
 
 for d in KernelSU kernelsu drivers/kernelsu fs/kernelsu; do
+
 if [ -d "$ROOTDIR/$d" ]; then
-KSU_ENABLED="true"
-break
+
+KSU_ENABLED="✅ Aktif"
+KSU_DIR="$ROOTDIR/$d"
+
+if git -C "$KSU_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+
+KSU_TAG=$(git -C "$KSU_DIR" describe --tags --abbrev=0 2>/dev/null)
+KSU_COMMIT=$(git -C "$KSU_DIR" rev-parse --short HEAD)
+
 fi
+
+KSU_MANAGER=$(grep -r MANAGER_MIN_VERSION "$KSU_DIR" 2>/dev/null \
+| grep -oE '[0-9]{4,}' \
+| head -1)
+
+break
+
+fi
+
 done
 
 }
 
-get_susfs_info() {
+# =========================================================
+# SUSFS
+# =========================================================
+
+detect_susfs() {
+
+SUSFS="❌ Tidak ada"
 
 for d in susfs fs/susfs drivers/susfs security/susfs; do
+
 if [ -d "$ROOTDIR/$d" ]; then
-SUSFS_ENABLED="true"
-SUSFS_DIR="$d"
-break
+
+SUSFS="✅ Aktif ($d)"
+
 fi
+
 done
 
 }
 
 # =========================================================
-# TELEGRAM START MESSAGE
+# START MESSAGE
 # =========================================================
 
-send_telegram_start() {
+send_start() {
+
+TREE="✅ Bersih"
 
 if [ "$DIRTY_COUNT" -gt 0 ]; then
-TREE_STATUS="Dirty ($DIRTY_COUNT files)"
-else
-TREE_STATUS="Clean"
+TREE="⚠️ Dirty ($DIRTY_COUNT file)"
 fi
 
-MSG="ReLIFE Kernel Build Started
+MSG="🚀 ReLIFE Kernel — Build Dimulai
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Device : ${DEVICE} — ${DEVICE_FULL}
-Kernel Version : ${KERNEL_VERSION}
-Localversion : ${KERNEL_LOCALVERSION}
+📱 Device : $DEVICE — $DEVICE_FULL
+🍃 Kernel : $KERNEL_VERSION
+🏷 Localversion : $LOCALVERSION
 
-KernelSU : $([ "$KSU_ENABLED" = "true" ] && echo "Enabled" || echo "Not Found")
-Variant : ${KSU_VARIANT}
+🔑 KernelSU : $KSU_ENABLED
+🧬 Tag : $KSU_TAG
+📱 Manager Min : $KSU_MANAGER
 
-SUSFS : $([ "$SUSFS_ENABLED" = "true" ] && echo "Enabled" || echo "Not Found")
-Directory : ${SUSFS_DIR}
+🛡 SUSFS : $SUSFS
 
-Source Info
-Branch : ${BRANCH}
-Commit : ${COMMIT_HASH}
-Message : ${COMMIT_MSG}
-Author : ${COMMIT_AUTHOR}
-Date : ${COMMIT_DATE}
-Commits : ${TOTAL_COMMITS}
-Tree : ${TREE_STATUS}
+📂 Source
+🌿 Branch : $BRANCH
+🔖 Commit : $COMMIT_HASH
+💬 Msg : $COMMIT_MSG
+👤 Author : $COMMIT_AUTHOR
+📅 Date : $COMMIT_DATE
+📊 Commits : $TOTAL_COMMITS
+🗂 Tree : $TREE
 
-Build Config
-Compiler : ${TC_INFO}
-Linker : ${LD_INFO}
-Defconfig : ${DEFCONFIG}
-Jobs : ${HOST_CORES}
+🛠 Build
+⚙️ Compiler : $COMPILER_VER
+🔗 Linker : $LINKER
+🔧 Defconfig : $DEFCONFIG
+🖥 Jobs : $HOST_CORES
 
-Host Machine
-Hostname : ${HOST_NAME}
-CPU : ${HOST_CPU}
-Cores : ${HOST_CORES}
-RAM : ${RAM_FREE} / ${RAM_TOTAL}
-Disk : ${DISK_FREE} / ${DISK_TOTAL}
-OS : ${HOST_OS}
+💻 Host
+🖥 Hostname : $HOST_NAME
+⚙️ CPU : $HOST_CPU
+🧠 Cores : $HOST_CORES
+💾 RAM : $RAM_FREE / $RAM_TOTAL
+💿 Disk : $DISK_FREE / $DISK_TOTAL
+🐧 OS : $HOST_OS
 
-Start Time : ${BUILD_DATETIME}"
+🕒 Start : $DATE"
 
-send_telegram "$MSG"
+send_msg "$MSG"
 
 }
 
@@ -227,33 +240,33 @@ send_telegram "$MSG"
 
 build_kernel() {
 
-echo "Building kernel..."
-
 rm -rf out
 
-make O=out ARCH=arm64 ${DEFCONFIG} || exit 1
+make O=out ARCH=arm64 $DEFCONFIG
 
-get_kernel_version
-get_localversion
-get_toolchain_info
-get_kernelsu_info
-get_susfs_info
+send_start
 
-send_telegram_start
-
-BUILD_START=$(date +%s)
+START=$(date +%s)
 
 make -j$(nproc) O=out ARCH=arm64 \
 CROSS_COMPILE=$TC64 \
 CROSS_COMPILE_ARM32=$TC32 \
-CROSS_COMPILE_COMPAT=$TC32 || exit 1
+CROSS_COMPILE_COMPAT=$TC32 2>&1 | tee $LOGFILE
 
-BUILD_END=$(date +%s)
+END=$(date +%s)
 
-DIFF=$((BUILD_END - BUILD_START))
-BUILD_TIME="$((DIFF / 60))m $((DIFF % 60))s"
+BUILD_TIME="$((END-START)) sec"
 
-ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${KERNEL_VERSION}-${DATE_TITLE}-${TIME_TITLE}.zip"
+}
+
+# =========================================================
+# ANALYZE LOG
+# =========================================================
+
+analyze_log() {
+
+WARNINGS=$(grep -i "warning:" $LOGFILE | wc -l)
+ERRORS=$(grep -i "error:" $LOGFILE | wc -l)
 
 }
 
@@ -264,28 +277,84 @@ ZIP_NAME="${KERNEL_NAME}-${DEVICE}-${KERNEL_VERSION}-${DATE_TITLE}-${TIME_TITLE}
 pack_kernel() {
 
 if [ ! -d "$ANYKERNEL_DIR" ]; then
-git clone -b mi8937 https://github.com/rahmatsobrian/AnyKernel3.git "$ANYKERNEL_DIR"
+git clone https://github.com/rahmatsobrian/AnyKernel3.git "$ANYKERNEL_DIR"
 fi
 
-cd "$ANYKERNEL_DIR" || exit 1
+cd "$ANYKERNEL_DIR"
 
-rm -f Image* *.zip
+rm -f *.zip Image*
 
 if [ -f "$KIMG_DTB" ]; then
 cp "$KIMG_DTB" Image.gz-dtb
-IMG_USED="Image.gz-dtb"
-elif [ -f "$KIMG" ]; then
-cp "$KIMG" Image.gz
-IMG_USED="Image.gz"
+IMG="Image.gz-dtb"
 else
-exit 1
+cp "$KIMG" Image.gz
+IMG="Image.gz"
 fi
 
-zip -r9 "$ZIP_NAME" . -x ".git*" "README.md"
+IMG_SIZE=$(du -h $IMG | awk '{print $1}')
 
-MD5_HASH=$(md5sum "$ZIP_NAME" | awk '{print $1}')
-SHA1_HASH=$(sha1sum "$ZIP_NAME" | awk '{print $1}')
-ZIP_SIZE=$(du -h "$ZIP_NAME" | awk '{print $1}')
+ZIP="ReLIFE-${DEVICE}-${KERNEL_VERSION}.zip"
+
+zip -r9 $ZIP *
+
+MD5=$(md5sum $ZIP | awk '{print $1}')
+SHA1=$(sha1sum $ZIP | awk '{print $1}')
+SIZE=$(du -h $ZIP | awk '{print $1}')
+
+}
+
+# =========================================================
+# SUCCESS
+# =========================================================
+
+send_success() {
+
+MSG="✅ ReLIFE Kernel Build Sukses
+
+📱 Device : $DEVICE
+🍃 Kernel : $KERNEL_VERSION
+
+📦 Image : $IMG ($IMG_SIZE)
+📁 Zip : $SIZE
+
+⏱ Build Time : $BUILD_TIME
+
+📊 Warning : $WARNINGS
+❌ Error : $ERRORS
+
+🔐 MD5
+$MD5
+
+🔑 SHA1
+$SHA1"
+
+upload_file "$ANYKERNEL_DIR/$ZIP" "$MSG"
+
+upload_file "$LOGFILE" "📋 Build Log"
+
+}
+
+# =========================================================
+# ERROR
+# =========================================================
+
+send_error() {
+
+MSG="❌ Build Gagal
+
+📱 Device : $DEVICE
+🌿 Branch : $BRANCH
+🔖 Commit : $COMMIT_HASH
+
+⚠️ Warning : $WARNINGS
+❌ Error : $ERRORS
+
+📋 Log akan dikirim"
+
+send_msg "$MSG"
+
+upload_file "$LOGFILE" "❌ Build Error Log"
 
 }
 
@@ -293,12 +362,19 @@ ZIP_SIZE=$(du -h "$ZIP_NAME" | awk '{print $1}')
 # RUN
 # =========================================================
 
-START=$(date +%s)
+detect_compiler
+get_kernel_version
+detect_kernelsu
+detect_susfs
 
 build_kernel
+
+analyze_log
+
+if [ "$ERRORS" -gt 0 ]; then
+send_error
+exit 1
+fi
+
 pack_kernel
-upload_telegram
-
-END=$(date +%s)
-
-echo "Done in $((END - START)) seconds"
+send_success
