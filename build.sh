@@ -20,7 +20,7 @@ TC32="arm-linux-gnueabi-"
 
 # ================= INFO =================
 KERNEL_NAME="ReLIFE"
-DEVICE="Rolex"
+DEVICE="mi8937"
 
 # ================= DATE (WIB) =================
 DATE_TITLE=$(TZ=Asia/Jakarta date +"%d%m%Y")
@@ -83,7 +83,7 @@ build_kernel() {
     echo -e "$yellow[+] Building kernel...$white"
 
     rm -rf out
-    make O=out ARCH=arm64 rahmatmsm8937_defconfig || {
+    make O=out ARCH=arm64 rahmatmsm8937hos_defconfig || {
         send_telegram_error
         exit 1
     }
