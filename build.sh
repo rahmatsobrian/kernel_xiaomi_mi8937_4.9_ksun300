@@ -1,36 +1,28 @@
 #!/bin/bash
-
 # ================= COLOR =================
 red='\033[0;31m'
 green='\033[0;32m'
 yellow='\033[0;33m'
 white='\033[0m'
-
 # ================= PATH =================
 ROOTDIR=$(pwd)
 OUTDIR="$ROOTDIR/out/arch/arm64/boot"
 ANYKERNEL_DIR="$ROOTDIR/AnyKernel"
-
 KIMG_DTB="$OUTDIR/Image.gz-dtb"
 KIMG="$OUTDIR/Image.gz"
-
 # ================= TOOLCHAIN =================
 TC64="aarch64-linux-gnu-"
 TC32="arm-linux-gnueabi-"
-
 # ================= INFO =================
 KERNEL_NAME="ReLIFE"
 DEVICE="mi8937"
-
 # ================= DATE (WIB) =================
 DATE_TITLE=$(TZ=Asia/Jakarta date +"%d%m%Y")
 TIME_TITLE=$(TZ=Asia/Jakarta date +"%H%M%S")
 BUILD_DATETIME=$(TZ=Asia/Jakarta date +"%d %B %Y")
-
 # ================= TELEGRAM =================
 TG_BOT_TOKEN="7443002324:AAFpDcG3_9L0Jhy4v98RCBqu2pGfznBCiDM"
 TG_CHAT_ID="-1003520316735"
-
 # ================= GLOBAL =================
 BUILD_TIME="unknown"
 KERNEL_VERSION="unknown"
@@ -38,16 +30,13 @@ TC_INFO="unknown"
 IMG_USED="unknown"
 MD5_HASH="unknown"
 ZIP_NAME=""
-
 # ================= FUNCTION =================
-
 clone_anykernel() {
     if [ ! -d "$ANYKERNEL_DIR" ]; then
         echo -e "$yellow[+] Cloning AnyKernel3...$white"
         git clone -b mi8937 https://github.com/rahmatsobrian/AnyKernel3.git "$ANYKERNEL_DIR" || exit 1
     fi
 }
-
 get_toolchain_info() {
     if command -v "${TC64}gcc" >/dev/null 2>&1; then
         GCC_VER=$("${TC64}gcc" -dumpversion)
@@ -59,7 +48,6 @@ get_toolchain_info() {
         TC_INFO="unknown"
     fi
 }
-
 get_kernel_version() {
     if [ -f "Makefile" ]; then
         VERSION=$(grep -E '^VERSION =' Makefile | awk '{print $3}')
